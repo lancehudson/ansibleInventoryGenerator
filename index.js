@@ -24,47 +24,8 @@
         return reservation.Instances;
       })));
     },
-    // Populate Users for AMI
-    function(instances, callback) {
-      var amiCache   = [];
-
-      async.eachSeries(instances, function(instance, callback) {
-        if (amiCache[instance.ImageId]) {
-          return callback();
-        }
-
-        var ami = ec2.describeImages({
-          ImageIds: [
-            instance.ImageId,
-          ],
-        }, function(err, data) {
-          if (err) { return callback(err); }
-          async.each(data.Images, function(image, callback) {
-            var user = null;
-            var name = _.values(
-                         _.pick(image, 'Name', 'Description'))
-                       .join(' ').toLowerCase();
-
-            // Guess User
-            if (name.includes('ubuntu')) {
-              user = 'ubuntu';
-            } else if (name.includes('amazon linux')) {
-              user = 'ec2-user';
-            } else {
-              user = 'root';
-            }
-
-            amiCache[image.ImageId] = user;
-            callback();
-          }, callback);
-        });
-      }, function(err) {
-        if (err) { return callback(err); }
-        callback(null, instances, amiCache);
-      });
-    },
     // Build Hosts List
-    function(instances, amiCache, callback) {
+    function(instances, callback) {
       callback(null, instances.map(function(instance) {
         var tags = _.object(instance.Tags.map(function(tag) {
           return [tag.Key, tag.Value];
@@ -72,19 +33,9 @@
 
         var config = {
           Host: tags.Name || instance.InstanceId,
-          _HostName: instance.PrivateIpAddress,
-          _User: amiCache[instance.ImageId],
-          _IdentityFile: '~/.ssh/' + instance.KeyName + '.pem',
-          _Env: tags.Env || 'EC2',
+          Env: tags.Env || 'EC2',
+          Service: tags.Service || 'unknown',
         };
-
-        if (tags.Bastion) {
-          config._ProxyCommand = 'ssh -q ' + tags.Bastion + ' nc %h 22';
-        } else {
-          config._Env = 'Bastion';
-          config._HostName = instance.PublicIpAddress;
-          config._DynamicForward = '127.0.0.1:1080';
-        }
 
         return config;
       }));
@@ -92,38 +43,57 @@
     // Filter List
     function(config, callback) {
       callback(null, config.filter(function(host) {
-        return host._HostName && host._User;
+        return host.Host && host.Env && host.Service;
       }));
     },
   ], function(err, config) {
     if (err) { console.error(err); }
     config = _.sortBy(config, 'Host');
-    var hosts = _.groupBy(config, '_Env');
-    console.log('### Generated SSH Config from AWS ###');
-    console.log('## Hosts: ' + JSON.stringify(_.countBy(config, '_Env')));
+    var hosts = _.groupBy(config, 'Env');
+    console.log('### Generated Ansible Inventory from AWS ###');
+    console.log('## Env: ' + JSON.stringify(_.countBy(config, 'Env')));
+    console.log('## Services: ' + JSON.stringify(_.countBy(config, 'Service')));
     console.log();
-    if (hosts.Bastion && hosts.Bastion.length > 0) {
-      console.log('## Bastion Hosts ##\n');
-      hosts.Bastion.forEach(function(host) {
-        console.log('Host ' + host.Host);
-        console.log('  HostName ' + host._HostName);
-        console.log('  User ' + host._User);
-        console.log('  DynamicForward ' + host._DynamicForward);
-        console.log('  IdentityFile ' + host._IdentityFile);
-        console.log();
-      });
-      delete(hosts.Bastion);
-    }
+
+    _.keys(hosts).forEach(function(env) {
+      hosts[env] = _.groupBy(hosts[env], 'Service');
+    });
+    // Output hosts
     _.keys(hosts).sort().forEach(function(env) {
-      console.log('## ' + env + ' ##\n');
-      hosts[env].forEach(function(host) {
-        console.log('Host ' + host.Host);
-        console.log('  HostName ' + host._HostName);
-        console.log('  User ' + host._User);
-        console.log('  ProxyCommand ' + host._ProxyCommand);
-        console.log('  IdentityFile ' + host._IdentityFile);
+      console.log('## ' + env + ' Services ##');
+      _.keys(hosts[env]).sort().forEach(function(service) {
+        console.log('[' + env.toLowerCase() + '-' +
+          service.toLowerCase() + ']');
+        hosts[env][service].forEach(function(host) {
+          console.log(host.Host);
+        });
         console.log();
       });
+    });
+
+    // Output Environments
+    console.log('## Environments ##');
+    _.keys(hosts).sort().forEach(function(env) {
+      console.log('[' + env.toLowerCase() + ':children]');
+      _.keys(hosts[env]).sort().forEach(function(service) {
+        console.log(env.toLowerCase() + '-' + service.toLowerCase());
+      });
+      console.log();
+    });
+
+    // Output Services
+    var services = _.groupBy(config, 'Service');
+    _.keys(services).forEach(function(service) {
+      services[service] = _.groupBy(services[service], 'Env');
+    });
+
+    console.log('## Services ##');
+    _.keys(services).sort().forEach(function(service) {
+      console.log('[' + service.toLowerCase() + ':children]');
+      _.keys(services[service]).sort().forEach(function(env) {
+        console.log(env.toLowerCase() + '-' + service.toLowerCase());
+      });
+      console.log();
     });
   });
 }());

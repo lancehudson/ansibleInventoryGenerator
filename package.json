@@ -1,7 +1,7 @@
 {
-  "name": "sshconfiggenerator",
+  "name": "ansibleinventorygenerator",
   "version": "1.0.0",
-  "description": "Script to generate an ssh config from AWS tags",
+  "description": "Script to generate an ansible inventory from AWS tags",
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
@@ -16,10 +16,10 @@
   "devDependencies": {},
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/lancehudson/sshConfigGenerator.git"
+    "url": "git+https://github.com/lancehudson/ansibleInventoryGenerator.git"
   },
   "bugs": {
-    "url": "https://github.com/lancehudson/sshConfigGenerator/issues"
+    "url": "https://github.com/lancehudson/ansibleInventoryGenerator/issues"
   },
-  "homepage": "https://github.com/lancehudson/sshConfigGenerator#readme"
+  "homepage": "https://github.com/lancehudson/ansibleInventoryGenerator#readme"
 }
